@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
 from src.core.client import DOEBahiaClient
 
@@ -29,10 +29,11 @@ async def test_fetch_content_retry_on_500():
     
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         # Retorna 500 na primeira vez, e 200 na segunda
-        mock_response_500 = AsyncMock()
+        mock_response_500 = MagicMock()
         mock_response_500.status_code = 500
+        mock_response_500.raise_for_status.side_effect = Exception("HTTP 500")
         
-        mock_response_200 = AsyncMock()
+        mock_response_200 = MagicMock()
         mock_response_200.status_code = 200
         mock_response_200.content = b"HTML_BYTES"
         mock_response_200.headers = {"Content-Type": "text/html"}
@@ -46,5 +47,25 @@ async def test_fetch_content_retry_on_500():
         assert content == b"HTML_BYTES"
         assert ctype == "text/html"
         assert mock_get.call_count == 2
+        
+    await client.close()
+
+@pytest.mark.asyncio
+async def test_get_editions_by_range():
+    """Testa se a busca por intervalo itera dia a dia corretamente"""
+    client = DOEBahiaClient()
+    
+    with patch.object(client, "get_editions_by_date", new_callable=AsyncMock) as mock_get_date, \
+         patch("src.core.client.apply_jitter", new_callable=AsyncMock):
+        
+        mock_get_date.side_effect = [["id_1"], ["id_2"], []]
+        
+        edicoes = await client.get_editions_by_range("01/05/2026", "03/05/2026")
+        
+        assert edicoes == ["id_1", "id_2"]
+        assert mock_get_date.call_count == 3
+        mock_get_date.assert_any_call("01/05/2026")
+        mock_get_date.assert_any_call("02/05/2026")
+        mock_get_date.assert_any_call("03/05/2026")
         
     await client.close()

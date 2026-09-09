@@ -147,18 +147,26 @@ class PostgresRepository:
                 return False
 
     async def get_chunks_without_vectors(self, limit: int = 100) -> list:
-        """Busca chunks que ainda não possuem vetor associado."""
+        """Busca chunks que ainda não possuem vetor associado, incluindo metadados do ato."""
         if not self.pool:
             return []
         query = """
-            SELECT id, texto_chunk FROM atos_chunks 
-            WHERE embedding IS NULL
-            ORDER BY criado_em ASC
+            SELECT c.id, c.texto_chunk, a.data_publicacao, a.identificador, a.titulo 
+            FROM atos_chunks c
+            JOIN atos_oficiais a ON c.ato_id = a.id
+            WHERE c.embedding IS NULL
+            ORDER BY c.criado_em ASC
             LIMIT $1;
         """
         async with self.pool.acquire() as conn:
             records = await conn.fetch(query, limit)
-            return [{"id": r["id"], "texto_chunk": r["texto_chunk"]} for r in records]
+            return [{
+                "id": r["id"], 
+                "texto_chunk": r["texto_chunk"],
+                "data_publicacao": str(r["data_publicacao"]) if r["data_publicacao"] else "Data Desconhecida",
+                "identificador": r["identificador"],
+                "titulo": r["titulo"]
+            } for r in records]
 
     async def save_chunk_vector(self, chunk_id: int, embedding: list[float]) -> bool:
         """Salva o embedding para um chunk específico."""

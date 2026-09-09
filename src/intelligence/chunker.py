@@ -1,7 +1,7 @@
 from typing import List
 import re
 
-def chunk_text(text: str, chunk_size: int = 600, overlap_size: int = 60) -> List[str]:
+def chunk_text(text: str, chunk_size: int = 300, overlap_size: int = 30) -> List[str]:
     """
     Divide o texto limpo em blocos (chunks) usando uma aproximação baseada em palavras/tokens
     para preparação de RAG, garantindo um overlap entre os blocos.

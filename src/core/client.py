@@ -63,25 +63,24 @@ class DOEBahiaClient:
 
     async def get_editions_by_range(self, start_date: str, end_date: str) -> List[str]:
         """
-        Busca edições em um intervalo de datas usando a API de calendário.
+        Busca edições em um intervalo de datas iterando dia a dia via get_editions_by_date,
+        garantindo resiliência e compatibilidade com o servidor legado.
         """
-        di = format_date_to_api(start_date)
-        df = format_date_to_api(end_date)
-        # Endpoint de busca agregada (calendário)
-        url = f"/busca/busca/buscar/query/0/di:{di}/df:{df}/?1=1&q=*&calendario=1"
-        
-        logger.info(f"[@debugger] Buscando edições no período: {start_date} até {end_date}")
+        from datetime import datetime, timedelta
+        logger.info(f"[@debugger] Buscando edições no período dia a dia: {start_date} até {end_date}")
         try:
-            response = await self.http_client.get(url)
-            response.raise_for_status()
-            data = response.json()
+            dt_start = datetime.strptime(start_date, "%d/%m/%Y")
+            dt_end = datetime.strptime(end_date, "%d/%m/%Y")
             
             ids = []
-            buckets = data.get('aggregations', {}).get('group_by_data', {}).get('buckets', [])
-            for day_bucket in buckets:
-                edicoes = day_bucket.get('group_by_edicao', {}).get('buckets', [])
-                for ed_bucket in edicoes:
-                    ids.append(str(ed_bucket['key']))
+            current = dt_start
+            while current <= dt_end:
+                date_str = current.strftime("%d/%m/%Y")
+                await apply_jitter()
+                day_ids = await self.get_editions_by_date(date_str)
+                if day_ids:
+                    ids.extend(day_ids)
+                current += timedelta(days=1)
             
             return sorted(list(set(ids))) # Remove duplicatas e ordena
         except Exception as e:

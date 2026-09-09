@@ -55,12 +55,18 @@ async def worker_loop():
                     break
                     
                 logger.info(f"Processando lote de {len(pendentes)} chunks para vetorização...")
-                for chunk in pendentes:
+                for idx, chunk in enumerate(pendentes, 1):
+                    data_pub = chunk.get("data_publicacao", "N/A")
+                    ident = chunk.get("identificador", "N/A")
+                    titulo = chunk.get("titulo", "")
+                    titulo_curto = titulo[:45] + "..." if titulo and len(titulo) > 45 else (titulo or "Sem título")
+                    
+                    logger.info(f"Vetorizando chunk {idx}/{len(pendentes)} | Data: {data_pub} | Ato: {ident} ({titulo_curto})")
                     texto = chunk["texto_chunk"]
                     vetor = await embeddings_client.get_embedding(texto)
                     if vetor:
                         await db_repo.save_chunk_vector(chunk["id"], vetor)
-                logger.info(f"Lote de {len(pendentes)} chunks vetorizado.")
+                logger.info(f"Lote de {len(pendentes)} chunks vetorizado com sucesso.")
             
             # 2. Buscar configurações dinâmicas
             settings = await db_repo.get_settings()

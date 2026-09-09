@@ -7,8 +7,8 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
-# nomic-embed-text suporta ~8192 tokens; ~4 chars/token → limite seguro de 8000 chars
-_MAX_CHARS = 8000
+# nomic-embed-text suporta ~2048 tokens nativos no Ollama; limite super seguro de 3500 chars
+_MAX_CHARS = 3500
 
 
 class OllamaEmbeddings:
@@ -34,13 +34,17 @@ class OllamaEmbeddings:
             try:
                 response = await self.client.post(
                     "/api/embeddings",
-                    json={"model": model, "prompt": text}
+                    json={
+                        "model": model, 
+                        "prompt": text,
+                        "options": {"num_ctx": 8192}
+                    }
                 )
                 response.raise_for_status()
                 data = response.json()
                 embedding = data.get("embedding", [])
                 latency = (time.perf_counter() - start_time) * 1000
-                logger.info(
+                logger.debug(
                     f"Embedding ({len(embedding)} dims) gerado em {latency:.2f}ms "
                     f"para {len(text)} chars (tentativa {attempt + 1})."
                 )
