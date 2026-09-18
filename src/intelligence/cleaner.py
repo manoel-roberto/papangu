@@ -1,24 +1,51 @@
 import re
+from typing import Optional
 
-def clean_text(text: str) -> str:
+
+def clean_text(text: Optional[str]) -> str:
     """
-    Remove ruídos comuns de extração de PDF, como numeração de páginas,
-    cabeçalhos repetitivos e quebras de linha quebradas.
+    Higieniza e normaliza textos extraídos de documentos do Diário Oficial (HTML e PDF).
+
+    Ações de limpeza:
+    - Normaliza quebras de linha e caracteres nulos.
+    - Remove cabeçalhos repetitivos do DOE-BA (ex: 'Diário Oficial do Estado da Bahia...').
+    - Remove marcadores de rodapé e paginação (ex: 'Página 1 de 10', números de página isolados).
+    - Colapsa múltiplos espaços em branco, tabulações e quebras excessivas em um único espaço.
     """
     if not text:
         return ""
-        
-    # Remove cabeçalhos de página típicos do DOE (ex: "Diário Oficial do Estado da Bahia - xx/xx/xxxx")
-    # Ajuste a regex conforme o padrão real do DOE
-    text = re.sub(r'Diário Oficial.*?Estado da Bahia.*?\n', '', text, flags=re.IGNORECASE)
-    
-    # Remove números de página isolados (ex: "123 \n" ou "- 12 -")
-    text = re.sub(r'^\s*-?\s*\d+\s*-?\s*$\n?', '', text, flags=re.MULTILINE)
-    
-    # Consolida quebras de linha onde a frase não terminou (ex: final não tem ponto)
-    # text = re.sub(r'([^\.\;\:\?!])\n([A-Z0-9a-z])', r'\1 \2', text)
-    
-    # Remove espaços em branco excessivos
-    text = re.sub(r'\s+', ' ', text)
-    
-    return text.strip()
+
+    # Remove caracteres nulos residuais de decodificação binária de PDF
+    sanitized = text.replace("\x00", "")
+
+    # Normaliza quebras de linha de diferentes SOs
+    sanitized = sanitized.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Remove cabeçalhos de página típicos do DOE-BA
+    sanitized = re.sub(
+        r"Di[áa]rio\s+Oficial.*?Estado\s+da\s+Bahia[^\n]*\n?",
+        "",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove padrões explícitos de paginação ('Página X de Y')
+    sanitized = re.sub(
+        r"P[áa]gina\s+\d+\s+de\s+\d+",
+        "",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove linhas contendo apenas numeração de página isolada (ex: " 12 ", "- 3 -")
+    sanitized = re.sub(
+        r"^\s*-?\s*\d+\s*-?\s*$",
+        "",
+        sanitized,
+        flags=re.MULTILINE,
+    )
+
+    # Consolida todos os espaços e quebras consecutivas em um único espaço
+    sanitized = re.sub(r"\s+", " ", sanitized)
+
+    return sanitized.strip()

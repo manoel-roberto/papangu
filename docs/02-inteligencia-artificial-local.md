@@ -3,66 +3,82 @@
 
 ## 🎓 O que você vai aprender?
 * A diferença entre IA Generativa (LLMs) e NLP Estatístico (NER).
-* A estratégia do "Funil de Inteligência" para economia de hardware.
-* Como rodar o Ollama via Docker e baixar modelos.
+* A estratégia do "Funil de Inteligência" para economia de hardware local.
+* Como o Spacy e o Ollama alimentam colunas nativas **JSONB** no PostgreSQL.
+* Por que eliminamos arquivos intermediários de auditoria em prol da integridade do banco.
 
 ---
 
 ## 1. O Duelo: LLM vs NER
 
-No laboratório do DOE-BA, usamos dois tipos de "cérebros":
+No laboratório do DOE-BA, combinamos dois cérebros complementares:
 
-- **NLP Estatístico (Spacy/NER):** Um especialista em etiquetas. Muito rápido, reconhece nomes de pessoas, organizações e valores sem "pensar" muito.
-- **IA Generativa (LLM/Ollama):** Um poliglota erudito. Entende o contexto, resume e traduz intenções complexas em JSON.
+- **NLP Estatístico (Spacy / NER):** Um classificador de alta velocidade. Não "pensa", mas identifica padrões sintáticos em milissegundos para rotular Pessoas, Organizações e Valores Monetários.
+- **IA Generativa (LLM / Ollama):** Um especialista semântico. Entende a nuance do texto legal, resume deliberações complexas e entrega dados estruturados em JSON.
 
 ---
 
 ## 🔍 Mergulho no Código: O Funil em Ação
 
-Toda a lógica de decisão reside em `src/intelligence/engine.py`. O fluxo segue um funil rigoroso para poupar seu hardware:
+Toda a lógica de classificação reside em `src/intelligence/engine.py`. O fluxo segue um funil rigoroso em cascata para poupar ciclos de CPU/GPU:
 
 ### Camada 1: O Filtro de Areia (Regex)
-O método `camada_1_regex` utiliza expressões regulares para uma busca ultra-veloz. Se um texto não contém nenhuma palavra-chave da sua `watchlist.yaml`, ele é descartado imediatamente, salvando ciclos de GPU/CPU.
+O método `match_watchlist` utiliza expressões regulares compiladas para inspecionar termos da sua `watchlist.yaml`. Se um ato não contém palavras de interesse e nem cita pessoas monitoradas, ele é classificado rapidamente como `NENHUM` e não consome recursos de NLP ou redes neurais.
 
 ### Camada 2: O Filtro de Água (Spacy NER)
-Se o texto for relevante, instanciamos o modelo `pt_core_news_sm` do **Spacy**. No arquivo `src/intelligence/engine.py`, o método `camada_2_spacy_ner` extrai entidades nomeadas. Isso nos dá uma estrutura básica (Pessoas e Órgãos) com custo computacional baixo.
+Quando o texto desperta interesse, o método `extract_entities_ner` executa o modelo `pt_core_news_sm` do **Spacy**. As entidades detectadas são encapsuladas no modelo `EntidadesExtraidas(pessoas, organizacoes, valores)`.
 
-### Camada 3: O Destilador (Ollama)
-Quando a complexidade aumenta (ex: extrair valores de contratos complexos), o método `camada_3_ollama_fallback` dispara uma chamada assíncrona ao **Ollama**. 
+### Camada 3: O Destilador Semântico (Ollama Fallback)
+Quando um ato demanda interpretação mais rica ou quando a watchlist teve match mas o Spacy requer complemento de estruturação contratual, o método `extract_structured_llm` aciona o **Ollama**:
 - **Modelo:** `qwen2.5:1.5b`.
-- **Segurança:** Após a resposta do LLM, os dados são validados novamente pelo **Pydantic** para garantir que a IA não "alucinou" um JSON quebrado.
+- **Formato Estrito:** A chamada força o parâmetro `format="json"`, garantindo que o modelo responda um JSON válido mapeado para `DadosEstruturadosLLM(pessoas_envolvidas, valor_contrato, resumo)`.
+
+---
+
+## 💾 Persistência de Alta Performance: Colunas Nativas JSONB
+
+Para manter integridade transacional absoluta e consultas flexíveis sem fragmentação de dados:
+
+1. As entidades do Spacy e os dados semânticos do Ollama são acoplados diretamente ao modelo **`AtoOficial`**.
+2. O repositório **`PostgresRepository`** grava esses dados em colunas **`JSONB` nativas** (`entidades` e `dados_estruturados`) na tabela `atos_oficiais`.
+3. Isso permite consultas SQL avançadas com operadores JSONB (ex: `WHERE entidades->'pessoas' ? 'Nome'`), mantendo integridade ACID e possibilitando a criação futura de índices GIN para buscas instantâneas.
 
 ---
 
 ## 3. Prática: O Coração Local (Ollama)
 
-O Ollama roda dentro de um container Docker, isolado e seguro.
+O Ollama opera isolado em seu próprio container Docker. Para baixar o modelo utilizado pelo funil:
 
-### Comandos de Mestre:
-Para baixar o modelo que usamos, você abre o terminal e digita:
 ```bash
 docker exec -it doe_ollama ollama pull qwen2.5:1.5b
 ```
 
 ---
 
-## 4. Para Aprofundar
+## 4. O Diagrama do Funil de Inteligência
 
-- **Pesquise por:** "NLP Named Entity Recognition (NER) vs LLM" para entender os trade-offs.
-- **Estude o conceito:** "Pydantic output parsing for LLMs".
+```mermaid
+flowchart TD
+    A[AtoOficial: Texto Limpo] --> B[src/intelligence/engine.py]
+    B --> C{Camada 1: Regex Match?}
+    C -- Não --> D[Classificado como NENHUM]
+    C -- Sim --> E[Camada 2: Spacy pt_core_news_sm]
+    E --> F[Gera EntidadesExtraidas]
+    F --> G{Requer Análise Profunda / LLM?}
+    G -- Não --> H[AtoOficial Enriquecido]
+    G -- Sim --> I[Camada 3: Ollama qwen2.5:1.5b JSON]
+    I --> J[Gera DadosEstruturadosLLM]
+    J --> H
+    H --> K[(PostgreSQL: Colunas JSONB)]
+    D --> K
+```
 
 ---
 
-```mermaid
-graph TD
-    A[src/core/models.py: AtoOficial] --> B[src/intelligence/engine.py]
-    B --> C{Camada 1: Regex}
-    C -- False --> D[Descarte]
-    C -- True --> E[Camada 2: Spacy NER]
-    E --> F[Camada 3: Ollama Call]
-    F --> G[Validação Pydantic Final]
-    G --> H[Salvar: src/persistence/pg_repository.py]
-```
+## 5. Para Aprofundar
+
+- **Pesquise por:** "PostgreSQL JSONB operators and GIN indexing".
+- **Estude o conceito:** "Structured JSON output with Ollama and Pydantic validation".
 
 ---
 [Voltar para o Índice](README.md) | [Próximo Capítulo: RAG e Vetores](03-arquitetura-rag-e-vetores.md)

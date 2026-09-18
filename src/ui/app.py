@@ -1,6 +1,6 @@
 import streamlit as st
 import httpx
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from datetime import datetime, timedelta
 
 # Configurações da Página

@@ -1,46 +1,33 @@
-import os
-import tempfile
+import io
 import logging
+from typing import Optional
 import pdfplumber
 
-from src.utils.helpers import clean_text
+from src.intelligence.cleaner import clean_text
 
 logger = logging.getLogger("DOE_BA_Engine")
 
-class PDFParser:
+
+def extract_pdf_text(pdf_bytes: Optional[bytes]) -> str:
     """
-    Parser focado em conteúdo PDF (application/pdf).
-    Salva em disco temporariamente, extrai o texto e apaga o arquivo.
+    Extrai texto de um documento PDF binário diretamente na memória via io.BytesIO.
+    Elimina I/O de disco, gravação de arquivos temporários e descritores órfãos.
+    Retorna o texto normalizado através do sanitizador unificado.
     """
-    
-    @staticmethod
-    def extract_text(pdf_bytes: bytes) -> str:
-        if not pdf_bytes:
-            return ""
-            
-        logger.info("[@debugger] [Parsing Phase] Extraindo texto de arquivo PDF (pdfplumber)")
-        
-        # Cria arquivo temporário seguro
-        fd, temp_path = tempfile.mkstemp(suffix=".pdf")
-        try:
-            with os.fdopen(fd, 'wb') as f:
-                f.write(pdf_bytes)
-                
-            text_blocks = []
-            with pdfplumber.open(temp_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_blocks.append(page_text)
-                        
-            full_text = "\n".join(text_blocks)
-            return clean_text(full_text)
-            
-        except Exception as e:
-            logger.error(f"[@debugger] [Parsing Phase] Erro ao extrair texto do PDF: {e}")
-            return ""
-        finally:
-            # Cleanup garantido
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                logger.debug("[@debugger] [Parsing Phase] Arquivo PDF temporário deletado com sucesso.")
+    if not pdf_bytes:
+        return ""
+
+    logger.debug("Extraindo texto de PDF em memória com pdfplumber")
+    try:
+        text_blocks = []
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text_blocks.append(page_text)
+
+        full_text = "\n".join(text_blocks)
+        return clean_text(full_text)
+    except Exception as e:
+        logger.error(f"Erro ao extrair texto do PDF em memória: {e}")
+        return ""

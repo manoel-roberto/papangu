@@ -13,7 +13,7 @@ Este método é ideal para contribuidores e para garantir que todos rodem exatam
 1. **Clone do Repositório:**
    ```bash
    git clone <url-do-repositorio>
-   cd lab_scrapy
+   cd Papangu
    ```
 2. **Configuração de Ambiente:**
    ```bash
